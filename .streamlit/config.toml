@@ -1,0 +1,8 @@
+[server]
+# This forces Streamlit to use polling instead of the default file watcher.
+# Polling is less efficient but much more reliable, especially in
+# Docker, VMs, or on network drives.
+fileWatcherType = "poll"
+
+# This ensures the "Always Rerun" option works as expected.
+runOnSave = true
