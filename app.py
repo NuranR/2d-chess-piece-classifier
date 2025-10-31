@@ -2,6 +2,9 @@ import streamlit as st
 from PIL import Image
 import numpy as np
 import cv2
+from streamlit_cropper import st_cropper
+import tensorflow as tf
+from pathlib import Path
 
 # Page configuration
 st.set_page_config(
@@ -11,124 +14,166 @@ st.set_page_config(
 )
 
 # Constants
-BOARD_SIZE = 400  # Size to crop the board to
+BOARD_SIZE = 400
+SQUARE_SIZE = 50 
+MODEL_PATH = "models/piece_classifier_model.tflite"
 
-def detect_and_crop_chessboard(image):
-    # Convert PIL image to OpenCV format (BGR)
-    img_array = np.array(image)
-    
-    # Ensure image is in BGR format for OpenCV
-    if len(img_array.shape) == 3 and img_array.shape[2] == 3:
-        img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-    else: # Handle grayscale or other formats
-        img_bgr = cv2.cvtColor(img_array, cv2.COLOR_GRAY2BGR) if len(img_array.shape) == 2 else img_array
+PIECE_MAP = {
+    0: '1',   # Empty square
+    1: 'P', 2: 'N', 3: 'B', 4: 'R', 5: 'Q', 6: 'K',  # White pieces
+    7: 'p', 8: 'n', 9: 'b', 10: 'r', 11: 'q', 12: 'k'  # Black pieces
+}
 
-    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+@st.cache_resource
+def load_model():
+    """Load the TFLite model (cached for performance)"""
+    if not Path(MODEL_PATH).exists():
+        st.error(f"⚠️ Model file not found at `{MODEL_PATH}`")
+        return None
     
-    # Add flags to make detection more robust
-    # flags = cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE + cv2.CALIB_CB_FAST_CHECK
-    
-    # Find the 7x7 internal corners of the chessboard
-    ret, corners = cv2.findChessboardCorners(gray, (7, 7), flags=None)
-    
-    if not ret:
+    try:
+        interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
+        interpreter.allocate_tensors()
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+        return interpreter, input_details, output_details
+    except Exception as e:
+        st.error(f"Error loading model: {e}")
         return None
 
-    # --- Extrapolation Logic ---
-    # Estimate the average square size from the inner grid
-    # Horizontal distance (top row of inner corners)
-    h_dist = np.linalg.norm(corners[0][0] - corners[6][0]) / 6.0
-    # Vertical distance (left column of inner corners)
-    v_dist = np.linalg.norm(corners[0][0] - corners[42][0]) / 6.0
+def extract_squares(board_image):
+    # Convert PIL to numpy array and to grayscale
+    img_array = np.array(board_image)
+    
+    # Convert to grayscale
+    if len(img_array.shape) == 3:
+        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+    else:
+        gray = img_array
+    
+    squares = []
+    for row in range(8):
+        for col in range(8):
+            y_start = row * SQUARE_SIZE
+            y_end = (row + 1) * SQUARE_SIZE
+            x_start = col * SQUARE_SIZE
+            x_end = (col + 1) * SQUARE_SIZE
+            
+            square = gray[y_start:y_end, x_start:x_end]
+            squares.append(square)
+    
+    return squares
 
-    # Get the four outermost inner corners
-    top_left_inner = corners[0][0]
-    top_right_inner = corners[6][0]
-    bottom_left_inner = corners[42][0]
+def predict_board(interpreter, input_details, output_details, squares):
+    predictions = []
     
-    # Define the direction vectors based on the grid orientation
-    # Vector pointing right
-    vec_right = (top_right_inner - top_left_inner) / 6.0
-    # Vector pointing down
-    vec_down = (bottom_left_inner - top_left_inner) / 6.0
+    for square in squares:
+        # Preprocess: normalize and reshape
+        img_array = square.astype('float32') / 255.0
+        img_array = np.expand_dims(img_array, axis=-1)  # Add channel dimension
+        img_array = np.expand_dims(img_array, axis=0)   # Add batch dimension
+        
+        # Run inference
+        interpreter.set_tensor(input_details[0]['index'], img_array)
+        interpreter.invoke()
+        output_data = interpreter.get_tensor(output_details[0]['index'])
+        
+        # Get predicted class
+        predicted_class = np.argmax(output_data)
+        predictions.append(predicted_class)
+    
+    return predictions
 
-    # Extrapolate to find the four outer corners of the 8x8 board
-    # Move one step left and one step up from the top-left inner corner
-    top_left_outer = bottom_left_inner + (vec_right * 7) + vec_down
-    # Move one step right and one step up from the top-right inner corner
-    top_right_outer = bottom_left_inner - vec_right + vec_down
-    # Move one step left and one step down from the bottom-left inner corner
-    bottom_left_outer = top_right_inner + vec_right - vec_down
-    # Move one step right and one step down from the bottom-right inner corner
-    bottom_right_outer = top_left_inner - vec_right - vec_down
-
-    # Define source and destination points for the full board
-    src_pts = np.float32([top_left_outer, top_right_outer, bottom_left_outer, bottom_right_outer])
+def predictions_to_fen(predictions):
+    fen = ""
     
-    dst_pts = np.float32([
-        [0, 0],
-        [BOARD_SIZE, 0],
-        [0, BOARD_SIZE],
-        [BOARD_SIZE, BOARD_SIZE]
-    ])
+    for row in range(8):
+        empty_count = 0
+        row_preds = predictions[row * 8:(row + 1) * 8]
+        
+        for pred in row_preds:
+            piece = PIECE_MAP.get(pred, '1')
+            
+            if piece == '1':  # Empty square
+                empty_count += 1
+            else:
+                if empty_count > 0:
+                    fen += str(empty_count)
+                    empty_count = 0
+                fen += piece
+        
+        # Add remaining empty squares
+        if empty_count > 0:
+            fen += str(empty_count)
+        
+        # Add rank separator (except after last rank)
+        if row < 7:
+            fen += '/'
     
-    # Get perspective transform matrix and warp the image
-    matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
-    cropped_board = cv2.warpPerspective(img_bgr, matrix, (BOARD_SIZE, BOARD_SIZE))
-    
-    return cropped_board
+    return fen
 
 
 def main():
     # Header
     st.title("♟️ ChessLens")
-    st.markdown("Upload a chessboard screenshot and get the FEN notation!")
+    
+    # Load model at startup
+    model_data = load_model()
+    if model_data is None:
+        st.stop()
+    
+    interpreter, input_details, output_details = model_data
+    # st.success("✅ Model loaded successfully!")
     
     # File uploader
     uploaded_file = st.file_uploader(
-        "Choose a chessboard image",
+        "Choose an image",
         type=["jpg", "jpeg", "png"],
         help="Upload a clear image of a chessboard"
     )
     
-    # Display the uploaded image
     if uploaded_file is not None:
-        # Display the image
+        # Load the image
         image = Image.open(uploaded_file)
         
-        st.subheader("Uploaded Image")
-        st.image(image, caption=f"Original image: {uploaded_file.name}", use_container_width=True)
+        st.info("Drag the corners to select just the board")
         
-        # Detect and crop the chessboard
-        with st.spinner("Detecting chessboard..."):
-            cropped_board = detect_and_crop_chessboard(image)
+        # Interactive cropper
+        cropped_img = st_cropper(
+            image, 
+            realtime_update=True,
+            box_color='#00FF00',
+            aspect_ratio=None,  # Allow free cropping
+        )
         
-        if cropped_board is not None:
-            st.success("✅ Chessboard detected successfully!")
+        # Show the cropped result
+        if cropped_img is not None:
+            # st.subheader("Step 2: Resized Board")            
+            # # Resize to standard size (400x400)
+            resized_board = cropped_img.resize((BOARD_SIZE, BOARD_SIZE), Image.Resampling.LANCZOS)
+            # st.image(resized_board, caption=f"Resized to {BOARD_SIZE}x{BOARD_SIZE}", width=400)
             
-            # Display the cropped board
-            st.subheader("Detected Chessboard")
-            # Convert BGR to RGB for display
-            cropped_rgb = cv2.cvtColor(cropped_board, cv2.COLOR_BGR2RGB)
-            st.image(cropped_rgb, caption=f"Cropped board ({BOARD_SIZE}x{BOARD_SIZE})", width=400)
-            
-            # Placeholder for FEN output
-            st.subheader("FEN Output")
-            st.text_input(
-                "FEN Notation:",
-                value="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR",
-                disabled=True,
-                help="This is a placeholder."
-            )
-        else:
-            st.error("Could not detect a chessboard in the image.")
-            st.info("""
-            """)
+            # Extract FEN            
+            if st.button("Extract FEN", type="primary"):
+                with st.spinner("Analyzing chess pieces..."):
+                    # Extract 64 squares
+                    squares = extract_squares(resized_board)
+                    
+                    # Run model predictions
+                    predictions = predict_board(interpreter, input_details, output_details, squares)
+                    
+                    # Convert to FEN
+                    fen_string = predictions_to_fen(predictions)
+                
+                st.success("FEN extracted successfully!")
+                
+                # Display the FEN
+                st.code(fen_string, language=None)
     
     else:
         # Show helpful message when no image is uploaded
         st.markdown("""
-        
+        Upload an image of a chess board to get started!
         """)
 
 
