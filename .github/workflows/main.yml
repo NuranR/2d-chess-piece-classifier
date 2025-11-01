@@ -9,15 +9,21 @@ jobs:
   sync-to-hub:
     runs-on: ubuntu-latest
     steps:
-      # Step 1: Check out GitHub code
+      # Step 1: Check GitHub code
       - uses: actions/checkout@v3
         with:
-          fetch-depth: 1
+          fetch-depth: 0 # Get full history for LFS to work
           lfs: true
 
-      # Step 2: Push that code to Hugging Face Space
-      - name: Push to hub
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          git push https://NuranR:$HF_TOKEN@huggingface.co/spaces/NuranR/chesslens deploy:main --force
+      # Step 2: Use the dedicated Hugging Face "Push" Action
+      - name: Push to Hugging Face Hub
+        uses: huggingface/push-to-hf-hub@v0.14.1
+        with:
+          hf_repository: NuranR/chesslens
+
+          hf_token: ${{ secrets.HF_TOKEN }}
+
+          repo_type: space
+
+          # Tell it the local folder to push (this is the default)
+          local_dir: .
