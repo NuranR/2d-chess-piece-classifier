@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.9-slim
 
 # Avoid interactive prompts during package installs
 ENV DEBIAN_FRONTEND=noninteractive
