@@ -4,15 +4,9 @@ import numpy as np
 import cv2
 from streamlit_cropper import st_cropper
 from pathlib import Path
+import tensorflow as tf
 import chess
 import chess.svg
-
-# Try to import tflite_runtime first, fallback to tensorflow
-try:
-    from tflite_runtime.interpreter import Interpreter
-except ImportError:
-    import tensorflow as tf
-    Interpreter = tf.lite.Interpreter
 
 # Page configuration
 st.set_page_config(
@@ -40,7 +34,7 @@ def load_model():
         return None
     
     try:
-        interpreter = Interpreter(model_path=MODEL_PATH)
+        interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
         interpreter.allocate_tensors()
         input_details = interpreter.get_input_details()
         output_details = interpreter.get_output_details()
