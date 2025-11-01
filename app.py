@@ -8,7 +8,7 @@ from pathlib import Path
 import chess
 import chess.svg
 
-# Page configuration
+## Page configuration
 st.set_page_config(
     page_title="ChessLens",
     page_icon="♟️",
