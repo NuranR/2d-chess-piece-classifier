@@ -20,4 +20,4 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git push https://NuranR:$HF_TOKEN@huggingface.co/spaces/NuranR/chesslens main
+          git push https://NuranR:$HF_TOKEN@huggingface.co/spaces/NuranR/chesslens deploy:main --force
