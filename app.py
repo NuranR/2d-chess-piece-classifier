@@ -5,6 +5,8 @@ import cv2
 from streamlit_cropper import st_cropper
 import tensorflow as tf
 from pathlib import Path
+import chess
+import chess.svg
 
 # Page configuration
 st.set_page_config(
@@ -28,7 +30,7 @@ PIECE_MAP = {
 def load_model():
     """Load the TFLite model (cached for performance)"""
     if not Path(MODEL_PATH).exists():
-        st.error(f"⚠️ Model file not found at `{MODEL_PATH}`")
+        st.error(f"Model file not found at `{MODEL_PATH}`")
         return None
     
     try:
@@ -113,6 +115,85 @@ def predictions_to_fen(predictions):
     return fen
 
 
+def get_full_fen_dialog(base_fen):
+    st.subheader("Board Configuration")
+    st.info("Configure additional details for the full FEN notation")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        turn = st.radio(
+            "Active player:",
+            options=["w", "b"],
+            format_func=lambda x: "White" if x == "w" else "Black",
+            horizontal=True
+        )
+        
+        castling = st.text_input(
+            "Castling rights:",
+            value="KQkq",
+            help="K=White kingside, Q=White queenside, k=Black kingside, q=Black queenside. Use '-' for none"
+        )
+    
+    with col2:
+        en_passant = st.text_input(
+            "En passant target:",
+            value="-",
+            help="Square where en passant capture is possible (e.g., 'e3') or '-' for none"
+        )
+        
+        halfmove = st.number_input(
+            "Halfmove clock:",
+            min_value=0,
+            value=0,
+            help="Number of halfmoves since last capture or pawn advance"
+        )
+    
+    fullmove = st.number_input(
+        "Fullmove number:",
+        min_value=1,
+        value=1,
+        help="Number of full moves (starts at 1, increments after Black's move)"
+    )
+    
+    # Construct full FEN
+    full_fen = f"{base_fen} {turn} {castling} {en_passant} {halfmove} {fullmove}"
+    
+    return full_fen
+
+
+def get_lichess_editor_url(fen_string):
+    import urllib.parse
+    
+    # URL encode the FEN string
+    encoded_fen = urllib.parse.quote(fen_string)
+    
+    # Lichess board editor URL
+    lichess_url = f"https://lichess.org/editor/{encoded_fen}"
+    
+    return lichess_url
+
+
+def render_chess_board(fen_string):
+    try:
+        board = chess.Board(fen_string)
+        # Generate SVG
+        svg_board = chess.svg.board(
+            board=board,
+            size=400,
+            coordinates=True,
+            colors={
+                "square light": "#f0d9b5",
+                "square dark": "#b58863",
+                "margin": "#212121"
+            }
+        )
+        return svg_board
+    except Exception as e:
+        st.error(f"Error rendering board: {e}")
+        return None
+
+
 def main():
     # Header
     st.title("♟️ ChessLens")
@@ -123,7 +204,6 @@ def main():
         st.stop()
     
     interpreter, input_details, output_details = model_data
-    # st.success("✅ Model loaded successfully!")
     
     # File uploader
     uploaded_file = st.file_uploader(
@@ -147,28 +227,52 @@ def main():
         )
         
         # Show the cropped result
-        if cropped_img is not None:
-            # st.subheader("Step 2: Resized Board")            
-            # # Resize to standard size (400x400)
+        if cropped_img is not None:       
+            # Resize to standard size (400x400)
             resized_board = cropped_img.resize((BOARD_SIZE, BOARD_SIZE), Image.Resampling.LANCZOS)
             # st.image(resized_board, caption=f"Resized to {BOARD_SIZE}x{BOARD_SIZE}", width=400)
             
             # Extract FEN            
             if st.button("Extract FEN", type="primary"):
                 with st.spinner("Analyzing chess pieces..."):
-                    # Extract 64 squares
                     squares = extract_squares(resized_board)
-                    
-                    # Run model predictions
                     predictions = predict_board(interpreter, input_details, output_details, squares)
-                    
-                    # Convert to FEN
                     fen_string = predictions_to_fen(predictions)
                 
                 st.success("FEN extracted successfully!")
                 
-                # Display the FEN
-                st.code(fen_string, language=None)
+                # Get full FEN with additional details
+                st.divider()
+                full_fen = get_full_fen_dialog(fen_string)
+                
+                st.divider()
+                st.subheader("Complete FEN Notation")
+                st.code(full_fen, language=None)
+                
+                # Chess Board Visualization
+                st.subheader("Chess Board")
+                svg_board = render_chess_board(full_fen)
+                
+                if svg_board:
+                    # Display SVG board
+                    st.markdown(
+                        f'<div style="display: flex; justify-content: center;">{svg_board}</div>',
+                        unsafe_allow_html=True
+                    )
+                
+                # Get Lichess URL for analysis
+                lichess_url = get_lichess_editor_url(full_fen)
+                
+                st.divider()
+                
+                # Links to external tools
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"### 🔗 [Open in Lichess Editor]({lichess_url})")
+                
+                with col2:
+                    analysis_url = lichess_url.replace("/editor/", "/analysis/")
+                    st.markdown(f"### 📊 [Open in Lichess Analysis]({analysis_url})")
     
     else:
         # Show helpful message when no image is uploaded
