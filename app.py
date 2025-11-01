@@ -3,8 +3,8 @@ from PIL import Image
 import numpy as np
 import cv2
 from streamlit_cropper import st_cropper
-from pathlib import Path
 import tensorflow as tf
+from pathlib import Path
 import chess
 import chess.svg
 
