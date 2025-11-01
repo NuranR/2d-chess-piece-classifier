@@ -1,0 +1,7 @@
+chess==1.11.2
+numpy==2.3.4
+opencv_python==4.12.0.88
+Pillow==12.0.0
+streamlit==1.50.0
+streamlit_cropper==0.2.2
+tensorflow==2.20.0
