@@ -1,4 +1,4 @@
-chess==1.11.2
+python-chess==1.999
 numpy==2.3.4
 opencv_python==4.12.0.88
 Pillow==12.0.0
