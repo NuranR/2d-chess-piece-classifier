@@ -1,7 +1,7 @@
 python-chess==1.999
-numpy==2.3.4
-opencv_python==4.12.0.88
-Pillow==12.0.0
-streamlit==1.50.0
-streamlit_cropper==0.2.2
-tensorflow==2.20.0
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+Pillow==10.4.0
+streamlit==1.39.0
+streamlit_cropper==0.2.1
+tensorflow==2.16.1
