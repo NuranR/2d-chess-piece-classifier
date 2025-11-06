@@ -12,7 +12,7 @@ import chess.svg
 st.set_page_config(
     page_title="ChessLens",
     page_icon="♟️",
-    layout="centered"
+    layout="wide"
 )
 
 # Constants
@@ -125,10 +125,8 @@ def build_full_fen(base_fen, turn):
 def get_lichess_editor_url(fen_string):
     import urllib.parse
     
-    # URL encode the FEN string
     encoded_fen = urllib.parse.quote(fen_string)
     
-    # Lichess board editor URL
     lichess_url = f"https://lichess.org/editor/{encoded_fen}"
     
     return lichess_url
@@ -137,7 +135,6 @@ def get_lichess_editor_url(fen_string):
 def render_chess_board(fen_string):
     try:
         board = chess.Board(fen_string)
-        # Generate SVG
         svg_board = chess.svg.board(
             board=board,
             size=400,
@@ -155,7 +152,6 @@ def render_chess_board(fen_string):
 
 
 def main():
-    # Header
     st.title("♟️ ChessLens")
     st.caption("Extract FEN notation from chess board images")
     
@@ -163,36 +159,34 @@ def main():
     if 'base_fen' not in st.session_state:
         st.session_state.base_fen = None
     
-    # Load model at startup
     model_data = load_model()
     if model_data is None:
         st.stop()
     
     interpreter, input_details, output_details = model_data
-    
-    # Compact file uploader with custom CSS to hide drag-and-drop area
+
     st.markdown("""
-    <style>
-    /* Main container shrinks to fit content */
-    [data-testid="stFileUploader"] {
-        width: max-content;
-    }
-    /* The actual dropzone - make it transparent and borderless */
-    [data-testid="stFileUploader"] section {
-        padding: 0;
-        float: left;
-        background-color: transparent !important;
-        border: none !important;
-    }
-    /* Hides the "Drag and drop file here" text/icon */
-    [data-testid="stFileUploader"] section > input + div {
-        display: none;
-    }
+        <style>
+        /* Main container shrinks to fit content */
+        [data-testid="stFileUploader"] {
+            width: max-content;
+        }
+        /* The actual dropzone - make it transparent and borderless */
+        [data-testid="stFileUploader"] section {
+            padding: 0;
+            float: left;
+            background-color: transparent !important;
+            border: none !important;
+        }
+        /* Hides the "Drag and drop file here" text/icon */
+        [data-testid="stFileUploader"] section > input + div {
+            display: none;
+        }
+        
+        </style>
+    """, unsafe_allow_html=True)
     
-    </style>
-""", unsafe_allow_html=True)
-    
-    # File uploader - now appears as compact button
+    # File uploader
     uploaded_file = st.file_uploader(
         "📤 Upload chess board image",
         type=["jpg", "jpeg", "png"],
@@ -200,7 +194,6 @@ def main():
     )
     
     if uploaded_file is not None:
-        # Load the image
         original_image = Image.open(uploaded_file)
         
         # Resize image to max height of 400px while maintaining aspect ratio
@@ -213,54 +206,45 @@ def main():
         else:
             display_image = original_image
         
-        # Initialize session state for cropping mode
+        # Initialize session state for cropping
         if 'crop_mode' not in st.session_state:
             st.session_state.crop_mode = False
         
-        # Crop button - placed BEFORE the cropper
-        if st.button("✂️ Enable Crop Tool", help="Click to enable cropping - drag corners to select the board area"):
-            st.session_state.crop_mode = True
+        col_left, col_right = st.columns([1, 1])
         
-        # Show instruction when crop mode is enabled
-        if st.session_state.crop_mode:
-            st.info("📸 Drag the green corners to select just the board area")
-        
-        # Always show the cropper, but only enable the box when crop_mode is True
-        cropped_img = st_cropper(
-            display_image, 
-            realtime_update=True,
-            box_color='#00FF00' if st.session_state.crop_mode else '#00000000',  # Transparent when not in crop mode
-            aspect_ratio=None,
-            return_type='box' if not st.session_state.crop_mode else 'image'  # Don't crop unless in crop mode
-        )
-        
-        # Determine which image to use
-        if st.session_state.crop_mode and cropped_img is not None:
-            final_image = cropped_img
-        else:
-            final_image = display_image
-        
-        # Show the image to be processed
-        if final_image is not None:       
-            # Resize to standard size (400x400)
-            resized_board = final_image.resize((BOARD_SIZE, BOARD_SIZE), Image.Resampling.LANCZOS)
+        with col_left:
+            if st.button("✂️ Enable Crop Tool", help="Click to enable cropping - drag corners to select the board area"):
+                st.session_state.crop_mode = True
+
+            cropped_img = st_cropper(
+                display_image, 
+                realtime_update=True,
+                box_color='#00FF00' if st.session_state.crop_mode else '#00000000',  # Transparent when not in crop mode
+                aspect_ratio=None,
+                return_type='box' if not st.session_state.crop_mode else 'image'  # Don't crop unless in crop mode
+            )
             
-            # Side-by-side: Turn selection and Extract button
-            col1, col2 = st.columns([1, 1])
+            # Determine which image to use
+            if st.session_state.crop_mode and cropped_img is not None:
+                final_image = cropped_img
+            else:
+                final_image = display_image
             
-            with col1:
+            # Show the image to be processed
+            if final_image is not None:
+                resized_board = final_image.resize((BOARD_SIZE, BOARD_SIZE), Image.Resampling.LANCZOS)
+                
+                # Turn selection and Extract button
                 turn = st.radio(
-                    "",
+                    "Select turn:",
                     options=["w", "b"],
                     format_func=lambda x: "⚪ White to move" if x == "w" else "⚫ Black to move",
                     horizontal=True,
-                    key="turn_selector",
-        label_visibility="collapsed"
+                    key="turn_selector"
                 )
-            
-            with col2:
+                
                 # Extract FEN button
-                if st.button("🎯 Extract FEN", type="primary"):
+                if st.button("🎯 Extract FEN", type="primary", use_container_width=True):
                     with st.spinner("🔍 Analyzing chess pieces..."):
                         squares = extract_squares(resized_board)
                         predictions = predict_board(interpreter, input_details, output_details, squares)
@@ -268,52 +252,38 @@ def main():
                         
                         # Build complete FEN with turn
                         full_fen = build_full_fen(base_fen, turn)
-                        
-                        # Store in session state
                         st.session_state.base_fen = full_fen
                     
-                    # Show toast notification instead of success message
                     st.toast("✨ FEN extracted successfully!", icon="✅")
+        
+        with col_right:
+            st.subheader("Preview")
+            if st.session_state.base_fen is not None:
+                svg_board = render_chess_board(st.session_state.base_fen)
+            else:
+                svg_board = render_chess_board("8/8/8/8/8/8/8/8 w KQkq - 0 1")
             
+            if svg_board:
+                st.markdown(
+                    f'<div style="display: flex; justify-content: center;">{svg_board}</div>',
+                    unsafe_allow_html=True
+                )
+            st.divider()
             # Display results if FEN has been extracted
             if st.session_state.base_fen is not None:
-                st.divider()
-                st.subheader("📋 Complete FEN Notation")
-                st.code(st.session_state.base_fen, language=None)
-                
-                # Copy button (text input for easy copying)
-                st.text_input(
-                    "Copy FEN:",
-                    value=st.session_state.base_fen,
-                    key="fen_output",
-                    label_visibility="collapsed"
-                )
-                
-                # Chess Board Visualization
-                st.subheader("♟️ Chess Board")
-                svg_board = render_chess_board(st.session_state.base_fen)
-                
-                if svg_board:
-                    # Display SVG board
-                    st.markdown(
-                        f'<div style="display: flex; justify-content: center;">{svg_board}</div>',
-                        unsafe_allow_html=True
-                    )
-                
-                # Get Lichess URL for analysis
-                lichess_url = get_lichess_editor_url(st.session_state.base_fen)
-                
-                st.divider()
-                
-                # Links to external tools
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown(f"### 🔗 [Open in Lichess Editor]({lichess_url})")
-                
-                with col2:
-                    analysis_url = lichess_url.replace("/editor/", "/analysis/")
-                    st.markdown(f"### 📊 [Open in Lichess Analysis]({analysis_url})")
-    
+                    st.code(st.session_state.base_fen, language=None)
+                    
+                    lichess_url = get_lichess_editor_url(st.session_state.base_fen)
+                    
+                    # Links to external tools
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown(f"### 🔗 [Lichess Editor]({lichess_url})")
+                    
+                    with col2:
+                        analysis_url = lichess_url.replace("/editor/", "/analysis/")
+                        st.markdown(f"### 📊 [Lichess Analysis]({analysis_url})")
+        
     else:
         # Reset session state when no file is uploaded
         st.session_state.base_fen = None
@@ -321,16 +291,9 @@ def main():
         # Show helpful message when no image is uploaded
         st.markdown("""
         ### 👋 Welcome to ChessLens!
-        
-        Upload an image of a chess board to extract its FEN notation.
-        
-        **Steps:**
-        1. 📤 Upload a chess board image
-        2. ✂️ (Optional) Click "Crop Image" to select just the board
-        3. ⚪⚫ Choose who moves next
-        4. 🎯 Click "Extract FEN"
+                
+        Upload an image of a chess board to get started.
         """)
-
 
 if __name__ == "__main__":
     main()
