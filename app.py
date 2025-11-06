@@ -157,6 +157,7 @@ def render_chess_board(fen_string):
 def main():
     # Header
     st.title("♟️ ChessLens")
+    st.caption("Extract FEN notation from chess board images")
     
     # Initialize session state for extracted FEN
     if 'base_fen' not in st.session_state:
@@ -169,16 +170,48 @@ def main():
     
     interpreter, input_details, output_details = model_data
     
-    # File uploader
+    # Compact file uploader with custom CSS to hide drag-and-drop area
+    st.markdown("""
+    <style>
+    /* Main container shrinks to fit content */
+    [data-testid="stFileUploader"] {
+        width: max-content;
+    }
+    /* The actual dropzone - make it transparent and borderless */
+    [data-testid="stFileUploader"] section {
+        padding: 0;
+        float: left;
+        background-color: transparent !important;
+        border: none !important;
+    }
+    /* Hides the "Drag and drop file here" text/icon */
+    [data-testid="stFileUploader"] section > input + div {
+        display: none;
+    }
+    
+    </style>
+""", unsafe_allow_html=True)
+    
+    # File uploader - now appears as compact button
     uploaded_file = st.file_uploader(
-        "Choose an image",
+        "📤 Upload chess board image",
         type=["jpg", "jpeg", "png"],
-        help="Upload a clear image of a chessboard"
+        label_visibility="collapsed"
     )
     
     if uploaded_file is not None:
         # Load the image
-        image = Image.open(uploaded_file)
+        original_image = Image.open(uploaded_file)
+        
+        # Resize image to max height of 400px while maintaining aspect ratio
+        max_height = 400
+        aspect_ratio = original_image.width / original_image.height
+        if original_image.height > max_height:
+            new_height = max_height
+            new_width = int(new_height * aspect_ratio)
+            display_image = original_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        else:
+            display_image = original_image
         
         # Initialize session state for cropping mode
         if 'crop_mode' not in st.session_state:
@@ -194,7 +227,7 @@ def main():
         
         # Always show the cropper, but only enable the box when crop_mode is True
         cropped_img = st_cropper(
-            image, 
+            display_image, 
             realtime_update=True,
             box_color='#00FF00' if st.session_state.crop_mode else '#00000000',  # Transparent when not in crop mode
             aspect_ratio=None,
@@ -205,7 +238,7 @@ def main():
         if st.session_state.crop_mode and cropped_img is not None:
             final_image = cropped_img
         else:
-            final_image = image
+            final_image = display_image
         
         # Show the image to be processed
         if final_image is not None:       
@@ -217,16 +250,17 @@ def main():
             
             with col1:
                 turn = st.radio(
-                    "⚔️ Who moves next?",
+                    "",
                     options=["w", "b"],
-                    format_func=lambda x: "⚪ White" if x == "w" else "⚫ Black",
+                    format_func=lambda x: "⚪ White to move" if x == "w" else "⚫ Black to move",
                     horizontal=True,
-                    key="turn_selector"
+                    key="turn_selector",
+        label_visibility="collapsed"
                 )
             
             with col2:
                 # Extract FEN button
-                if st.button("🎯 Extract FEN", type="primary", use_container_width=True):
+                if st.button("🎯 Extract FEN", type="primary"):
                     with st.spinner("🔍 Analyzing chess pieces..."):
                         squares = extract_squares(resized_board)
                         predictions = predict_board(interpreter, input_details, output_details, squares)
@@ -238,7 +272,8 @@ def main():
                         # Store in session state
                         st.session_state.base_fen = full_fen
                     
-                    st.success("✨ FEN extracted successfully!")
+                    # Show toast notification instead of success message
+                    st.toast("✨ FEN extracted successfully!", icon="✅")
             
             # Display results if FEN has been extracted
             if st.session_state.base_fen is not None:
