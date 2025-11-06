@@ -11,6 +11,10 @@ app_file: app.py
 
 Convert chess board images to FEN notation using deep learning! Upload a photo of any chess position and get the FEN string instantly.
 
+🚀 **Live Demo:** [https://huggingface.co/spaces/NuranR/chesslens](https://huggingface.co/spaces/NuranR/chesslens)
+
+![ChessLens App Screenshot](images/ss-hf.png)
+
 ## 🎯 Features
 
 - 📸 **Image Upload** - Support for JPG, PNG formats
