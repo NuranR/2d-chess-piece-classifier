@@ -4,9 +4,7 @@ emoji: ♟️
 colorFrom: blue
 colorTo: indigo
 sdk: streamlit
-sdk_version: 1.50.0
 app_file: app.py
-pinned: false
 ---
 
 # ♟️ ChessLens - Chess Position to FEN Converter
@@ -29,7 +27,5 @@ Convert chess board images to FEN notation using deep learning! Upload a photo o
 3. Click "Extract FEN" to analyze
 4. Configure game state (turn, castling, etc.)
 5. Copy the FEN or open in Lichess for analysis
-
----
 
 Built with Streamlit, OpenCV, and TensorFlow Lite.
