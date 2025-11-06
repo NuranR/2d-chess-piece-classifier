@@ -115,50 +115,10 @@ def predictions_to_fen(predictions):
     return fen
 
 
-def get_full_fen_dialog(base_fen):
-    st.subheader("Board Configuration")
-    st.info("Configure additional details for the full FEN notation")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        turn = st.radio(
-            "Active player:",
-            options=["w", "b"],
-            format_func=lambda x: "White" if x == "w" else "Black",
-            horizontal=True
-        )
-        
-        castling = st.text_input(
-            "Castling rights:",
-            value="KQkq",
-            help="K=White kingside, Q=White queenside, k=Black kingside, q=Black queenside. Use '-' for none"
-        )
-    
-    with col2:
-        en_passant = st.text_input(
-            "En passant target:",
-            value="-",
-            help="Square where en passant capture is possible (e.g., 'e3') or '-' for none"
-        )
-        
-        halfmove = st.number_input(
-            "Halfmove clock:",
-            min_value=0,
-            value=0,
-            help="Number of halfmoves since last capture or pawn advance"
-        )
-    
-    fullmove = st.number_input(
-        "Fullmove number:",
-        min_value=1,
-        value=1,
-        help="Number of full moves (starts at 1, increments after Black's move)"
-    )
-    
-    # Construct full FEN
-    full_fen = f"{base_fen} {turn} {castling} {en_passant} {halfmove} {fullmove}"
-    
+def build_full_fen(base_fen, turn):
+    """Build complete FEN with turn and default values"""
+    # Default values: KQkq castling, no en passant, 0 halfmove, 1 fullmove
+    full_fen = f"{base_fen} {turn} KQkq - 0 1"
     return full_fen
 
 
@@ -198,6 +158,10 @@ def main():
     # Header
     st.title("♟️ ChessLens")
     
+    # Initialize session state for extracted FEN
+    if 'base_fen' not in st.session_state:
+        st.session_state.base_fen = None
+    
     # Load model at startup
     model_data = load_model()
     if model_data is None:
@@ -216,42 +180,83 @@ def main():
         # Load the image
         image = Image.open(uploaded_file)
         
-        st.info("Drag the corners to select just the board")
+        # Initialize session state for cropping mode
+        if 'crop_mode' not in st.session_state:
+            st.session_state.crop_mode = False
         
-        # Interactive cropper
+        # Crop button - placed BEFORE the cropper
+        if st.button("✂️ Enable Crop Tool", help="Click to enable cropping - drag corners to select the board area"):
+            st.session_state.crop_mode = True
+        
+        # Show instruction when crop mode is enabled
+        if st.session_state.crop_mode:
+            st.info("📸 Drag the green corners to select just the board area")
+        
+        # Always show the cropper, but only enable the box when crop_mode is True
         cropped_img = st_cropper(
             image, 
             realtime_update=True,
-            box_color='#00FF00',
-            aspect_ratio=None,  # Allow free cropping
+            box_color='#00FF00' if st.session_state.crop_mode else '#00000000',  # Transparent when not in crop mode
+            aspect_ratio=None,
+            return_type='box' if not st.session_state.crop_mode else 'image'  # Don't crop unless in crop mode
         )
         
-        # Show the cropped result
-        if cropped_img is not None:       
+        # Determine which image to use
+        if st.session_state.crop_mode and cropped_img is not None:
+            final_image = cropped_img
+        else:
+            final_image = image
+        
+        # Show the image to be processed
+        if final_image is not None:       
             # Resize to standard size (400x400)
-            resized_board = cropped_img.resize((BOARD_SIZE, BOARD_SIZE), Image.Resampling.LANCZOS)
-            # st.image(resized_board, caption=f"Resized to {BOARD_SIZE}x{BOARD_SIZE}", width=400)
+            resized_board = final_image.resize((BOARD_SIZE, BOARD_SIZE), Image.Resampling.LANCZOS)
             
-            # Extract FEN            
-            if st.button("Extract FEN", type="primary"):
-                with st.spinner("Analyzing chess pieces..."):
-                    squares = extract_squares(resized_board)
-                    predictions = predict_board(interpreter, input_details, output_details, squares)
-                    fen_string = predictions_to_fen(predictions)
-                
-                st.success("FEN extracted successfully!")
-                
-                # Get full FEN with additional details
+            # Side-by-side: Turn selection and Extract button
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                turn = st.radio(
+                    "⚔️ Who moves next?",
+                    options=["w", "b"],
+                    format_func=lambda x: "⚪ White" if x == "w" else "⚫ Black",
+                    horizontal=True,
+                    key="turn_selector"
+                )
+            
+            with col2:
+                # Extract FEN button
+                if st.button("🎯 Extract FEN", type="primary", use_container_width=True):
+                    with st.spinner("🔍 Analyzing chess pieces..."):
+                        squares = extract_squares(resized_board)
+                        predictions = predict_board(interpreter, input_details, output_details, squares)
+                        base_fen = predictions_to_fen(predictions)
+                        
+                        # Build complete FEN with turn
+                        full_fen = build_full_fen(base_fen, turn)
+                        
+                        # Store in session state
+                        st.session_state.base_fen = full_fen
+                    
+                    st.success("✨ FEN extracted successfully!")
+            
+            # Display results if FEN has been extracted
+            if st.session_state.base_fen is not None:
                 st.divider()
-                full_fen = get_full_fen_dialog(fen_string)
+                st.subheader("📋 Complete FEN Notation")
+                st.code(st.session_state.base_fen, language=None)
                 
-                st.divider()
-                st.subheader("Complete FEN Notation")
-                st.code(full_fen, language=None)
+                # Copy button (text input for easy copying)
+                st.text_input(
+                    "Copy FEN:",
+                    value=st.session_state.base_fen,
+                    key="fen_output",
+                    label_visibility="collapsed"
+                )
                 
                 # Chess Board Visualization
-                st.subheader("Chess Board")
-                svg_board = render_chess_board(full_fen)
+                st.subheader("♟️ Chess Board")
+                svg_board = render_chess_board(st.session_state.base_fen)
                 
                 if svg_board:
                     # Display SVG board
@@ -261,7 +266,7 @@ def main():
                     )
                 
                 # Get Lichess URL for analysis
-                lichess_url = get_lichess_editor_url(full_fen)
+                lichess_url = get_lichess_editor_url(st.session_state.base_fen)
                 
                 st.divider()
                 
@@ -275,9 +280,20 @@ def main():
                     st.markdown(f"### 📊 [Open in Lichess Analysis]({analysis_url})")
     
     else:
+        # Reset session state when no file is uploaded
+        st.session_state.base_fen = None
+        st.session_state.crop_mode = False
         # Show helpful message when no image is uploaded
         st.markdown("""
-        Upload an image of a chess board to get started!
+        ### 👋 Welcome to ChessLens!
+        
+        Upload an image of a chess board to extract its FEN notation.
+        
+        **Steps:**
+        1. 📤 Upload a chess board image
+        2. ✂️ (Optional) Click "Crop Image" to select just the board
+        3. ⚪⚫ Choose who moves next
+        4. 🎯 Click "Extract FEN"
         """)
 
 
