@@ -1,0 +1,25 @@
+name: Sync to Hugging Face Space
+
+on:
+  push:
+    branches:
+      - deploy
+
+jobs:
+  sync-to-hub:
+    runs-on: ubuntu-latest
+    steps:
+      # Check GitHub code
+      - name: Checkout GitHub Repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      # Push code to the Hugging Face Space
+      - name: Push to Hugging Face Hub
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          # Pushes your 'deploy' branch to the 'main' branch on HF
+          git push https://NuranR:$HF_TOKEN@huggingface.co/spaces/NuranR/chesslens deploy:main --force

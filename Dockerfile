@@ -1,34 +1,43 @@
-FROM python:3.10-slim
+FROM continuumio/miniconda3
+
+# Avoid interactive prompts during package installs
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies for OpenCV
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        libglib2.0-0 \
+        libsm6 \
+        libxext6 \
+        libxrender1 \
+        libgomp1 \
+        libgl1 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 WORKDIR /app
 
-# Install system dependencies needed for OpenCV
-RUN apt-get update && apt-get install -y \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    libgthread-2.0-0 \
-    libgl1-mesa-glx \
-    && rm -rf /var/lib/apt/lists/*
+COPY environment.yml ./environment.yml
 
-COPY requirements.txt .
+# Create the Conda environment from envtfile
+RUN conda env create -f environment.yml
 
-RUN pip install --no-cache-dir -r requirements.txt
+# 6. Copy the rest of the app code (app.py, models/, etc.)
+COPY . .
 
-# Copy the application files
-COPY app.py .
-COPY models/ ./models/
+# 7. Create .streamlit directory 
+RUN mkdir -p .streamlit || true
 
-# Create .streamlit directory for config (optional)
-RUN mkdir -p .streamlit
-
-# Expose Streamlit default port
+# 8. Expose Streamlit port
 EXPOSE 8501
 
-# Health check
-HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health
+# 9. Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s CMD curl --fail http://localhost:8501/_stcore/health || exit 1
 
-# Run the Streamlit app
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", "--server.fileWatcherType=none", "--browser.gatherUsageStats=false"]
+# Run the app using the 'conda run' wrapper
+# Executes the command inside the 'chess2fen' environment.
+CMD ["conda", "run", "-n", "chess2fen", "streamlit", "run", "app.py", \
+     "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", \
+     "--server.fileWatcherType=none", "--browser.gatherUsageStats=false"]
